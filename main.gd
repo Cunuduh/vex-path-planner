@@ -4,6 +4,7 @@ var selected_point_index: int = -1
 var multi_selection: Array[int] = []
 var paths: Array = []
 var screen_size = Vector2i(1152, 648)
+var dragging: bool = false
 
 const FIELD_SIZE_PIXELS = 482.0
 const FIELD_SIZE_FEET := 12.0
@@ -45,18 +46,18 @@ func _ready():
 
 func _gui_input(event: InputEvent) -> void:
   if event is InputEventMouseButton:
-    if event.pressed:
-      var mouse_pos := get_global_mouse_position()
-      var ctrl_pressed = Input.is_key_pressed(KEY_CTRL)
-
+    var mouse_pos := get_global_mouse_position()
+    if event.button_index == MOUSE_BUTTON_LEFT:
       var field_start_x = (screen_size.x - FIELD_SIZE_PIXELS) / 2.0
       var field_end_x = field_start_x + FIELD_SIZE_PIXELS
       var field_start_y = (screen_size.y - FIELD_SIZE_PIXELS) / 2.0
       var field_end_y = field_start_y + FIELD_SIZE_PIXELS
-
-      if mouse_pos.x >= field_start_x and mouse_pos.x <= field_end_x and \
-         mouse_pos.y >= field_start_y and mouse_pos.y <= field_end_y:
-        if event.button_index == MOUSE_BUTTON_LEFT:
+      
+      if event.pressed:
+        var ctrl_pressed = Input.is_key_pressed(KEY_CTRL)
+        
+        if mouse_pos.x >= field_start_x and mouse_pos.x <= field_end_x and \
+           mouse_pos.y >= field_start_y and mouse_pos.y <= field_end_y:
           var shift_pressed = Input.is_key_pressed(KEY_SHIFT)
           var alt_pressed = Input.is_key_pressed(KEY_ALT)
           if ctrl_pressed:
@@ -89,18 +90,28 @@ func _gui_input(event: InputEvent) -> void:
               else:
                 select_point_by_index(close_point_index)
                 multi_selection.clear()
+                
+              # Start dragging the point
+              dragging = true
             else:
               add_point(mouse_pos)
               multi_selection.clear()
+      else:
+        # Mouse released, stop dragging
+        dragging = false
+        
+    elif event.button_index == MOUSE_BUTTON_RIGHT:
+      var point_index = find_closest_point(mouse_pos)
+      if point_index != -1:
+        remove_point(point_index)
+        if point_index in multi_selection:
+          multi_selection.erase(point_index)
 
-        elif event.button_index == MOUSE_BUTTON_RIGHT:
-          var point_index = find_closest_point(mouse_pos)
-          if point_index != -1:
-            remove_point(point_index)
-            if point_index in multi_selection:
-              multi_selection.erase(point_index)
-
-        get_viewport().set_input_as_handled()
+    get_viewport().set_input_as_handled()
+  
+  elif event is InputEventMouseMotion and dragging and selected_point_index != -1:
+    # Handle dragging movement
+    drag_point(selected_point_index, get_global_mouse_position())
 
 func _input(event: InputEvent) -> void:
   if event is InputEventKey:
@@ -134,15 +145,13 @@ func create_multi_point_path(path_type: PathType = PathType.LINEAR) -> void:
   if multi_selection.size() < 2:
     return
   if path_type == PathType.LINEAR:
-    update_headings_for_path(multi_selection)
+    update_headings(multi_selection)
 
   if path_type == PathType.SPLINE and multi_selection.size() > 2:
-    # Create a single spline with all points
     var start_index = multi_selection[0]
     var end_index = multi_selection[multi_selection.size() - 1]
     var waypoints: Array[int] = []
     
-    # Add all middle points as waypoints
     for i in range(1, multi_selection.size() - 1):
       waypoints.append(multi_selection[i])
     
@@ -150,7 +159,6 @@ func create_multi_point_path(path_type: PathType = PathType.LINEAR) -> void:
     print("New spline path created with waypoints: ", waypoints)
     paths.append(new_path)
   else:
-    # For LINEAR or BOOMERANG, create segment-by-segment
     for i in range(multi_selection.size() - 1):
       var start_index = multi_selection[i]
       var end_index = multi_selection[i + 1]
@@ -161,42 +169,33 @@ func create_multi_point_path(path_type: PathType = PathType.LINEAR) -> void:
 
   queue_redraw()
 
-func update_headings_for_path(point_indices: Array[int]) -> void:
+func update_headings(point_indices: Array[int]) -> void:
   if point_indices.size() < 2:
     return
     
   for i in range(point_indices.size()):
-    var current_idx = point_indices[i]
-    
-    if current_idx >= 0 and current_idx < point_data.size():
-      var current_pos = point_data[current_idx].position
-      var heading = 0.0
-      
-      if i == 0:
-        var next_idx = point_indices[i + 1]
-        if next_idx >= 0 and next_idx < point_data.size():
-          var next_pos = point_data[next_idx].position
-          var direction = next_pos - current_pos
-          heading = -rad_to_deg(atan2(-direction.y, direction.x)) + 90
-      elif i == point_indices.size() - 1:
-        var prev_idx = point_indices[i - 1]
-        if prev_idx >= 0 and prev_idx < point_data.size():
-          var prev_pos = point_data[prev_idx].position
-          var direction = current_pos - prev_pos
-          heading = -rad_to_deg(atan2(-direction.y, direction.x)) + 90
-      else:
-        var prev_idx = point_indices[i - 1]
-        var next_idx = point_indices[i + 1]
-        if prev_idx >= 0 and prev_idx < point_data.size() and next_idx >= 0 and next_idx < point_data.size():
-            var next_pos = point_data[next_idx].position
-            var direction = next_pos - current_pos
-            heading = -rad_to_deg(atan2(-direction.y, direction.x)) + 90
-      
-      heading = fmod(heading, 360.0)
-      if heading < 0:
-        heading += 360.0
-        
-      point_data[current_idx].heading = heading
+    var current_idx := point_indices[i]
+    var current_pos := point_data[current_idx].position
+    var heading := 0.0
+    if i == 0:
+      var next_idx := point_indices[i + 1]
+      if next_idx >= 0 and next_idx < point_data.size():
+        heading = -rad_to_deg(atan2(- (point_data[next_idx].position - current_pos).y, (point_data[next_idx].position - current_pos).x)) + 90
+    elif i == point_indices.size() - 1:
+      var prev_idx := point_indices[i - 1]
+      if prev_idx >= 0 and prev_idx < point_data.size():
+        heading = -rad_to_deg(atan2(- (current_pos - point_data[prev_idx].position).y, (current_pos - point_data[prev_idx].position).x)) + 90
+    else:
+      var prev_idx := point_indices[i - 1]
+      var next_idx := point_indices[i + 1]
+      if prev_idx >= 0 and prev_idx < point_data.size() and next_idx >= 0 and next_idx < point_data.size():
+        heading = -rad_to_deg(atan2(- (point_data[next_idx].position - current_pos).y, (point_data[next_idx].position - current_pos).x)) + 90
+
+    heading = fmod(heading, 360.0)
+    if heading < 0:
+      heading += 360.0
+
+    point_data[current_idx].heading = heading
       
   if selected_point_index != -1 and selected_point_index < point_data.size():
     update_properties_panel()
@@ -205,7 +204,7 @@ func add_point(pos: Vector2) -> void:
   var shift_pressed = Input.is_key_pressed(KEY_SHIFT)
   var feet_pos := pixel_to_feet(pos)
   if shift_pressed:
-    feet_pos = feet_pos.snapped(Vector2(0.5, 0.5))
+    feet_pos = feet_pos.snapped(Vector2(0.25, 0.25))
     pos = feet_to_pixel(feet_pos)
 
   var new_point = PointData.new(pos, 0.0, false)
@@ -464,3 +463,29 @@ func _on_heading_visibility_changed(index: int, new_value: bool) -> void:
   if index >= 0 and index < point_data.size():
     point_data[index].heading_visibility = new_value
     queue_redraw()
+
+func drag_point(index: int, mouse_pos: Vector2) -> void:
+  if index < 0 or index >= point_data.size():
+    return
+    
+  var field_start_x = (screen_size.x - FIELD_SIZE_PIXELS) / 2.0
+  var field_end_x = field_start_x + FIELD_SIZE_PIXELS
+  var field_start_y = (screen_size.y - FIELD_SIZE_PIXELS) / 2.0
+  var field_end_y = field_start_y + FIELD_SIZE_PIXELS
+  
+  # Constrain to field boundaries
+  mouse_pos.x = clamp(mouse_pos.x, field_start_x, field_end_x)
+  mouse_pos.y = clamp(mouse_pos.y, field_start_y, field_end_y)
+  
+  var feet_pos := pixel_to_feet(mouse_pos)
+  
+  # Snap to grid if shift is pressed
+  if Input.is_key_pressed(KEY_SHIFT):
+    feet_pos = feet_pos.snapped(Vector2(0.25, 0.25))
+    mouse_pos = feet_to_pixel(feet_pos)
+  
+  point_data[index].position = mouse_pos
+  
+  # Update properties panel with new position
+  update_properties_panel()
+  queue_redraw()

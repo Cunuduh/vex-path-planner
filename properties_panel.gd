@@ -10,13 +10,13 @@ var current_index: int = -1
 @onready var x_spinbox = $VBoxContainer/PositionContainer/XContainer/SpinBox
 @onready var y_spinbox = $VBoxContainer/PositionContainer/YContainer/SpinBox
 @onready var heading_spinbox = $VBoxContainer/HeadingContainer/SpinBox
-@onready var heading_visibility_checkbutton = $VBoxContainer/HeadingVisibilityContainer/CheckButton
+@onready var heading_visibility_checkbox = $VBoxContainer/HeadingVisibilityContainer/CheckBox
 @onready var reverse_button = $VBoxContainer/ReversedContainer/Button
 func _ready() -> void:
   x_spinbox.connect("value_changed", _on_x_changed)
   y_spinbox.connect("value_changed", _on_y_changed)
   heading_spinbox.connect("value_changed", _on_heading_value_changed)
-  heading_visibility_checkbutton.connect("toggled", _on_heading_visibility_toggled)
+  heading_visibility_checkbox.connect("toggled", _on_heading_visibility_toggled)
   reverse_button.connect("pressed", _on_reverse_pressed)
 
 func update_values(index: int, pos: Vector2, heading: float, is_heading_visible: bool) -> void:
@@ -26,17 +26,17 @@ func update_values(index: int, pos: Vector2, heading: float, is_heading_visible:
   x_spinbox.set_block_signals(true)
   y_spinbox.set_block_signals(true)
   heading_spinbox.set_block_signals(true)
-  heading_visibility_checkbutton.set_block_signals(true)
+  heading_visibility_checkbox.set_block_signals(true)
 
   x_spinbox.value = pos.x
   y_spinbox.value = pos.y
   heading_spinbox.value = normalize_heading(heading)
-  heading_visibility_checkbutton.button_pressed = is_heading_visible
+  heading_visibility_checkbox.button_pressed = is_heading_visible
 
   x_spinbox.set_block_signals(false)
   y_spinbox.set_block_signals(false)
   heading_spinbox.set_block_signals(false)
-  heading_visibility_checkbutton.set_block_signals(false)
+  heading_visibility_checkbox.set_block_signals(false)
 
 func _on_x_changed(new_value: float) -> void:
   if current_index >= 0:
